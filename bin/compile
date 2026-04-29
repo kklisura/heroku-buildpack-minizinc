@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+# fail fast
+set -e
+set -o pipefail
+
+# debug
+# set -x
+
+# parse and derive params
+BUILD_DIR=$1
+CACHE_DIR=$2
+ENV_DIR=$3
+BUILDPACK_DIR="$(cd "$(dirname "$0")"; cd ..; pwd)"
+
+function error() {
+  echo " !     $*" >&2
+  exit 1
+}
+
+function topic() {
+  echo "-----> $*"
+}
+
+function indent() {
+  c='s/^/       /'
+  case $(uname) in
+    Darwin) sed -l "$c";;
+    *)      sed -u "$c";;
+  esac
+}
+
+topic "Installing MiniZinc"
+
+source "$BUILDPACK_DIR/bin/install-minizinc"
+
+# Verify the executables are actually present
+which minizinc | indent
+VERSION=$(minizinc --version)
+
+echo "Installed MiniZinc (version $VERSION)" | indent
