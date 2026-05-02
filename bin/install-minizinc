@@ -11,93 +11,37 @@
 # topic()
 # indent()
 
-PACKAGES="
-minizinc
-"
+MZN_VERSION="2.9.4"
+MZN_DIR="MiniZincIDE-${MZN_VERSION}-bundle-linux-x86_64"
+MZN_ARCHIVE="${MZN_DIR}.tgz"
+MZN_BIN_DIR=minizinc
 
-# We must invalidate the cache if the stack changes, since the cached indexes and
-# package archives will not be compatible with a different Ubuntu version.
-# This file really should be inside "${CACHE_DIR}/apt" not "${CACHE_DIR}/.apt", however,
-# the generic APT buildpack has used the wrong directory name for its version file for some
-# time, so we have to match that, given this buildpack and the APT buildpack share all the
-# other cached APT directories.
-STACK_VERSION_FILE="${CACHE_DIR}/.apt/STACK"
+INSTALL_DIR="$BUILD_DIR/.bin"
 
-if [[ -d "${CACHE_DIR}/apt" ]]; then
-  if [[ -f "${STACK_VERSION_FILE}" ]]; then
-    CACHED_STACK=$(cat "${STACK_VERSION_FILE}")
-  else
-    CACHED_STACK=
-  fi
+## Create the installation directory if it does not exist
+mkdir -p $INSTALL_DIR
 
-  if [[ "${CACHED_STACK}" == "${STACK}" ]]; then
-    echo "Reusing APT cache" | indent
-  elif [[ -z "${CACHED_STACK}" ]]; then
-    # Older versions of the buildpack won't have written the version file.
-    # (Plus any other broken APT-related buildpacks that don't invalidate on cache change.)
-    echo "Clearing APT cache since it's missing the stack version metadata file." | indent
-    rm -rf "${CACHE_DIR}/apt"
-  else
-    echo "Clearing APT cache since stack changed from ${CACHED_STACK} to ${STACK}" | indent
-    rm -rf "${CACHE_DIR}/apt"
-  fi
-fi
+## Download MiniZinc release
+wget "https://github.com/MiniZinc/MiniZincIDE/releases/download/${MZN_VERSION}/${MZN_ARCHIVE}" \
+     -nv -O "${INSTALL_DIR}/${MZN_ARCHIVE}"
 
-mkdir -p "${CACHE_DIR}/.apt"
-echo "${STACK}" > "${STACK_VERSION_FILE}"
+## Extract the binaries from archive
+tar xf "${INSTALL_DIR}/${MZN_ARCHIVE}" -C "${INSTALL_DIR}"
 
-APT_CACHE_DIR="$CACHE_DIR/apt/cache"
-APT_STATE_DIR="$CACHE_DIR/apt/state"
+## Remove extracted directory
+rm "${INSTALL_DIR}/${MZN_ARCHIVE}"
 
-mkdir -p "$APT_CACHE_DIR/archives/partial"
-mkdir -p "$APT_STATE_DIR/lists/partial"
+# Create a symlink
+cd "${INSTALL_DIR}"
+ln -s "${MZN_DIR}/bin" "${INSTALL_DIR}/${MZN_BIN_DIR}"
 
-APT_OPTIONS="-o debug::nolocking=true -o dir::cache=$APT_CACHE_DIR -o dir::state=$APT_STATE_DIR"
-
-echo "Updating APT package index" | indent
-apt-get $APT_OPTIONS update | indent
-
-for PACKAGE in $PACKAGES; do
-  if [[ $PACKAGE == *deb ]]; then
-    PACKAGE_NAME=$(basename $PACKAGE .deb)
-    PACKAGE_FILE=$APT_CACHE_DIR/archives/$PACKAGE_NAME.deb
-
-    echo "Fetching $PACKAGE" | indent
-    curl -s -L -z $PACKAGE_FILE -o $PACKAGE_FILE $PACKAGE 2>&1 | indent
-  else
-    echo "Fetching .debs for $PACKAGE" | indent
-    apt-get $APT_OPTIONS -y --force-yes -d install --reinstall --no-install-recommends $PACKAGE | indent
-  fi
-done
-
-mkdir -p $BUILD_DIR/.apt
-
-for DEB in $(ls -1 $APT_CACHE_DIR/archives/*.deb); do
-  echo "Installing $(basename $DEB)" | indent
-  dpkg -x $DEB $BUILD_DIR/.apt/
-done
-
-echo "Writing profile script" | indent
-mkdir -p $BUILD_DIR/.profile.d
-cat <<EOF >$BUILD_DIR/.profile.d/000_apt.sh
-export PATH="\$HOME/.apt/usr/bin:\$PATH"
-export LD_LIBRARY_PATH="\$HOME/.apt/usr/lib/x86_64-linux-gnu:\$HOME/.apt/usr/lib/i386-linux-gnu:\$HOME/.apt/usr/lib:\$LD_LIBRARY_PATH"
-export LIBRARY_PATH="\$HOME/.apt/usr/lib/x86_64-linux-gnu:\$HOME/.apt/usr/lib/i386-linux-gnu:\$HOME/.apt/usr/lib:\$LIBRARY_PATH"
-export INCLUDE_PATH="\$HOME/.apt/usr/include:\$HOME/.apt/usr/include/x86_64-linux-gnu:\$INCLUDE_PATH"
-export CPATH="\$INCLUDE_PATH"
-export CPPPATH="\$INCLUDE_PATH"
-export PKG_CONFIG_PATH="\$HOME/.apt/usr/lib/x86_64-linux-gnu/pkgconfig:\$HOME/.apt/usr/lib/i386-linux-gnu/pkgconfig:\$HOME/.apt/usr/lib/pkgconfig:\$PKG_CONFIG_PATH"
-EOF
-
-export PATH="$BUILD_DIR/.apt/usr/bin:$PATH"
-export LD_LIBRARY_PATH="$BUILD_DIR/.apt/usr/lib/x86_64-linux-gnu:$BUILD_DIR/.apt/usr/lib/i386-linux-gnu:$BUILD_DIR/.apt/usr/lib:$LD_LIBRARY_PATH"
-export LIBRARY_PATH="$BUILD_DIR/.apt/usr/lib/x86_64-linux-gnu:$BUILD_DIR/.apt/usr/lib/i386-linux-gnu:$BUILD_DIR/.apt/usr/lib:$LIBRARY_PATH"
-export INCLUDE_PATH="$BUILD_DIR/.apt/usr/include:$BUILD_DIR/.apt/usr/include/x86_64-linux-gnu:$INCLUDE_PATH"
-export CPATH="$INCLUDE_PATH"
-export CPPPATH="$INCLUDE_PATH"
-export PKG_CONFIG_PATH="$BUILD_DIR/.apt/usr/lib/x86_64-linux-gnu/pkgconfig:$BUILD_DIR/.apt/usr/lib/i386-linux-gnu/pkgconfig:$BUILD_DIR/.apt/usr/lib/pkgconfig:$PKG_CONFIG_PATH"
+export PATH="${INSTALL_DIR}/${MZN_BIN_DIR}:$PATH"
 
 #give environment to later buildpacks
-export | grep -E -e ' (PATH|LD_LIBRARY_PATH|LIBRARY_PATH|INCLUDE_PATH|CPATH|CPPPATH|PKG_CONFIG_PATH)='  > "$BUILDPACK_DIR/export"
+export | grep -E -e ' (PATH)='  > "$BUILDPACK_DIR/export"
 
-echo "Installed MiniZinc for $STACK" | indent
+echo "Installed MiniZinc" | indent
+
+cat <<EOF >$BUILD_DIR/.profile.d/001_minizinc_buildpack_paths.sh
+export PATH="/app/.bin/${MZN_BIN_DIR}:$PATH"
+EOF
